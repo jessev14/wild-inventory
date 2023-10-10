@@ -143,19 +143,25 @@ Hooks.on('renderActorSheet', (app, [html], appData) => {
 
 Hooks.on('preUpdateItem', (item, diff, options, userID) => {
     const newSection = diff.flags?.[moduleID]?.customInventorySection;
-    if (!newSection) return;
+    const quantityChange = 'quantity' in (diff.system ?? {});
+    const weightChange = 'weight' in (diff.system ?? {});
+
+    if (!newSection && !quantityChange && !weightChange) return;
 
     const { actor } = item;
     const inventorySections = actor.getFlag(moduleID, 'inventorySections');
-    const section = inventorySections.find(s => s.id === newSection);
+    const targetSection = newSection || item.getFlag(moduleID, 'customInventorySection');
+    const section = inventorySections.find(s => s.id === targetSection);
     const { maxWeight } = section;
     if (!maxWeight) return;
 
     const currentWeight = actor.items.reduce((acc, current) => {
-        if (current.getFlag(moduleID, 'customInventorySection') !== newSection) return acc;
+        if (current.getFlag(moduleID, 'customInventorySection') !== targetSection) return acc;
+        if (current.uuid === item.uuid) return acc;
+
         return acc + ((current.system.weight || 0) * (current.system.quantity || 0));
     }, 0);
-    const newWeight = currentWeight + ((item.system.weight || 0) * (item.system.quantity || 0));
+    const newWeight = currentWeight + ((diff.system?.weight ?? (item.system.weight || 0)) * (diff.system?.quantity ?? (item.system.quantity || 0)));
     if (newWeight > maxWeight) {
         ui.notifications.warn('Section weight limit reached.');
         return false;
@@ -185,7 +191,7 @@ async function getData(wrapped, options) {
         const items = inventoryItems.filter(i => i.getFlag(moduleID, 'customInventorySection') === section.id).sort((a, b) => { return (a.sort || 0) - (b.sort || 0) });
         if (section.maxWeight) {
             const currentWeight = items.reduce((acc, current) => {
-                return acc + (current.system.weight || 0);
+                return acc + ((current.system.weight * current.system.quantity) || 0);
             }, 0);
             label += ` (${currentWeight}/${section.maxWeight} lbs.)`;
         }
