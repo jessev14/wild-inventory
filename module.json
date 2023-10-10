@@ -1,0 +1,37 @@
+{
+    "id": "wild-inventory",
+    "title": "Wild Inventory",
+    "description": "",
+    "authors": [
+        {
+            "name": "enso",
+            "discord": "enso#0361"
+        }
+    ],
+    "version": "1.0.0",
+    "compatibility": {
+        "minimum": "10",
+        "verified": "11"
+    },
+    "esmodules": [
+        "./scripts/wild-inventory.js"
+    ],
+    "styles": [],
+    "languages": [],
+    "relationships": {
+        "requires": [
+            {
+                "id": "lib-wrapper",
+                "type": "module",
+                "compatibility": {
+                    "minimum": "1",
+                    "verified": "1.12.7.1"
+                }
+            }
+        ]
+    },
+    "flags": {},
+    "url": "",
+    "manifest": "",
+    "download": ""
+}
