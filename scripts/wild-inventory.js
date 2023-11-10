@@ -9,7 +9,6 @@ const defaultFlagData = [];
 Hooks.once('init', () => {
     libWrapper.register(moduleID, 'game.dnd5e.applications.actor.ActorSheet5e.prototype.getData', getData, 'WRAPPER');
     libWrapper.register(moduleID, 'ActorSheet.prototype._onDropItem', _onDropItem, 'OVERRIDE');
-    libWrapper.register(moduleID, 'CONFIG.Actor.documentClass.prototype._prepareEncumbrance', _prepareEncumbrance, 'OVERRIDE');
 });
 
 Hooks.once('ready', () => {
@@ -139,6 +138,20 @@ Hooks.on('renderActorSheet', (app, [html], appData) => {
             arr.splice(toIndex, 0, element);
         }
     }
+
+    for (const li of html.querySelectorAll('li.item')) {
+        const item = actor.items.get(li.dataset.itemId);
+        if (!item) continue;
+
+        const sectionID = item.getFlag(moduleID, 'customInventorySection');
+        const section = inventorySections.find(s => s.id === sectionID);
+        if (!section?.weightLimit) continue;
+
+        const itemWeight = item.getFlag(moduleID, 'weight') * item.system.quantity;
+        let weightUnit = game.i18n.localize(`DND5E.Abbreviation${game.settings.get("dnd5e", "metricWeightUnits") ? "Kg" : "Lbs"}`);
+        weightUnit = weightUnit[0].toUpperCase() + weightUnit.slice(1);
+        li.querySelector('div.item-weight').innerText = `[${itemWeight} ${weightUnit}]`;
+    }
 });
 
 Hooks.on('preUpdateItem', (item, diff, options, userID) => {
@@ -151,6 +164,8 @@ Hooks.on('preUpdateItem', (item, diff, options, userID) => {
     const { actor } = item;
     const inventorySections = actor.getFlag(moduleID, 'inventorySections');
     const targetSection = newSection || item.getFlag(moduleID, 'customInventorySection');
+    if (!inventorySections || !targetSection) return;
+
     const section = inventorySections.find(s => s.id === targetSection);
     const { maxWeight } = section;
     if (!maxWeight) return;
@@ -166,6 +181,29 @@ Hooks.on('preUpdateItem', (item, diff, options, userID) => {
         ui.notifications.warn('Section weight limit reached.');
         return false;
     }
+});
+
+Hooks.on('updateItem', (item, diff, options, userID) => {
+    if (userID !== game.user.id) return;
+    if (!('customInventorySection' in diff.flags[moduleID])) return;
+    
+    const { actor } = item;
+    const sectionID = diff.flags[moduleID].customInventorySection;
+    const section = actor.getFlag(moduleID, 'inventorySections').find(s => s.id === sectionID);
+    const { weightLimit } = section;
+    return item.update({
+        [`flags.${moduleID}.weight`]: weightLimit ? item.system.weight : null,
+        'system.weight': weightLimit ? 0 : item.flags[moduleID].weight
+    });
+});
+
+Hooks.on('renderItemSheet', (app, [html], appData) => {
+    const item = app.object;
+    if (!item.getFlag(moduleID, 'weight')) return;
+
+    const weightInput = html.querySelector('input[name="system.weight"]');
+    weightInput.value = item.getFlag(moduleID, 'weight');
+    weightInput.name = `flags.${moduleID}.weight`;
 });
 
 
@@ -231,52 +269,6 @@ async function _onDropItem(event, data) {
     return this._onDropItemCreate(itemData);
 }
 
-function _prepareEncumbrance() {
-    const encumbrance = this.system.attributes.encumbrance ??= {};
-
-    // Get the total weight from items
-    const physicalItems = ["weapon", "equipment", "consumable", "tool", "backpack", "loot"];
-    let weight = this.items.reduce((weight, i) => {
-        if (!physicalItems.includes(i.type)) return weight;
-
-        const sectionID = i.getFlag(moduleID, 'customInventorySection');
-        const inventorySections = this.getFlag(moduleID, 'inventorySections');
-        if (inventorySections) {
-            const section = inventorySections.find(s => s.id === sectionID);
-            if (section?.weightLimit) return weight;
-        }
-
-        const q = i.system.quantity || 0;
-        const w = i.system.weight || 0;
-        return weight + (q * w);
-    }, 0);
-
-    // [Optional] add Currency Weight (for non-transformed actors)
-    const currency = this.system.currency;
-    if (game.settings.get("dnd5e", "currencyWeight") && currency) {
-        const numCoins = Object.values(currency).reduce((val, denom) => val + Math.max(denom, 0), 0);
-        const currencyPerWeight = game.settings.get("dnd5e", "metricWeightUnits")
-            ? CONFIG.DND5E.encumbrance.currencyPerWeight.metric
-            : CONFIG.DND5E.encumbrance.currencyPerWeight.imperial;
-        weight += numCoins / currencyPerWeight;
-    }
-
-    // Determine the Encumbrance size class
-    let mod = { tiny: 0.5, sm: 1, med: 1, lg: 2, huge: 4, grg: 8 }[this.system.traits.size] || 1;
-    if (this.flags.dnd5e?.powerfulBuild) mod = Math.min(mod * 2, 8);
-
-    const strengthMultiplier = game.settings.get("dnd5e", "metricWeightUnits")
-        ? CONFIG.DND5E.encumbrance.strMultiplier.metric
-        : CONFIG.DND5E.encumbrance.strMultiplier.imperial;
-
-    // Populate final Encumbrance values
-    encumbrance.value = weight.toNearest(0.1);
-    encumbrance.max = ((this.system.abilities.str?.value ?? 10) * strengthMultiplier * mod).toNearest(0.1);
-    encumbrance.pct = Math.clamped((encumbrance.value * 100) / encumbrance.max, 0, 100);
-    encumbrance.encumbered = encumbrance.pct > (200 / 3);
-
-}
-
 
 export class SectionConfiguration extends FormApplication {
     constructor(object, actor) {
@@ -302,6 +294,17 @@ export class SectionConfiguration extends FormApplication {
         const updateData = foundry.utils.mergeObject(this.object, formData);
         const actorSections = this.actor.getFlag(moduleID, 'inventorySections');
         const newData = actorSections.map(s => s.id !== updateData.id ? s : updateData);
+        const items = this.actor.items.filter(i => i.getFlag(moduleID, 'customInventorySection') === this.sectionID);
+        const updates = [];
+        for (const item of items) {
+            const update = {
+                _id: item._id,
+                [`flags.${moduleID}.weight`]: formData.weightLimit ? item.system.weight : null,
+                'system.weight': formData.weightLimit ? 0 : item.flags[moduleID].weight
+            };
+            updates.push(update);
+        }
+        await Item.updateDocuments(updates, { parent: this.actor });
         return this.actor.setFlag(moduleID, 'inventorySections', newData);
     }
 }
