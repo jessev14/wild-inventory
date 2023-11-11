@@ -185,11 +185,13 @@ Hooks.on('preUpdateItem', (item, diff, options, userID) => {
 
 Hooks.on('updateItem', (item, diff, options, userID) => {
     if (userID !== game.user.id) return;
-    if (!('customInventorySection' in diff.flags[moduleID])) return;
+    if (!('customInventorySection' in (diff.flags?.[moduleID] || {}) )) return;
     
     const { actor } = item;
     const sectionID = diff.flags[moduleID].customInventorySection;
-    const section = actor.getFlag(moduleID, 'inventorySections').find(s => s.id === sectionID);
+    const section = actor.getFlag(moduleID, 'inventorySections')?.find(s => s.id === sectionID);
+    if (!section) return;
+
     const { weightLimit } = section;
     return item.update({
         [`flags.${moduleID}.weight`]: weightLimit ? item.system.weight : null,
@@ -291,20 +293,22 @@ export class SectionConfiguration extends FormApplication {
     }
 
     async _updateObject(event, formData) {
-        const updateData = foundry.utils.mergeObject(this.object, formData);
         const actorSections = this.actor.getFlag(moduleID, 'inventorySections');
+        const sameWL = actorSections.find(s => s.id === this.sectionID).weightLimit !== formData.weightLimit;
+        const updateData = foundry.utils.mergeObject(this.object, formData);
         const newData = actorSections.map(s => s.id !== updateData.id ? s : updateData);
         const items = this.actor.items.filter(i => i.getFlag(moduleID, 'customInventorySection') === this.sectionID);
-        const updates = [];
-        for (const item of items) {
-            const update = {
-                _id: item._id,
-                [`flags.${moduleID}.weight`]: formData.weightLimit ? item.system.weight : null,
-                'system.weight': formData.weightLimit ? 0 : item.flags[moduleID].weight
-            };
-            updates.push(update);
+        if (sameWL) {
+            for (const item of items) {
+                if (formData.weightLimit) {
+                    await item.setFlag(moduleID, 'weight', item.system.weight);
+                    await item.update({ 'system.weight': 0 })
+                } else {
+                    await item.update({ 'system.weight': item.getFlag(moduleID, 'weight') });
+                    await item.unsetFlag(moduleID, 'weight');
+                }
+            }
         }
-        await Item.updateDocuments(updates, { parent: this.actor });
         return this.actor.setFlag(moduleID, 'inventorySections', newData);
     }
 }
