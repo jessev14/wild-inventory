@@ -40,7 +40,6 @@ Hooks.on('renderDocumentSheetConfig', (app, [html], appData) => {
     };
     html.querySelector('button').before(resetSections);
     app.setPosition({ height: 'auto' });
-
 });
 
 Hooks.on('renderActorSheet', (app, [html], appData) => {
