@@ -200,7 +200,7 @@ Hooks.on('updateItem', (item, diff, options, userID) => {
 
 Hooks.on('renderItemSheet', (app, [html], appData) => {
     const item = app.object;
-    if (!item.getFlag(moduleID, 'weight')) return;
+    if (!('weight' in (item.flags[moduleID] || {}))) return;
 
     const weightInput = html.querySelector('input[name="system.weight"]');
     weightInput.value = item.getFlag(moduleID, 'weight');
