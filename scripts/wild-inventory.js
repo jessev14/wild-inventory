@@ -230,7 +230,8 @@ async function getData(wrapped, options) {
         const items = inventoryItems.filter(i => i.getFlag(moduleID, 'customInventorySection') === section.id).sort((a, b) => { return (a.sort || 0) - (b.sort || 0) });
         if (section.maxWeight) {
             const currentWeight = items.reduce((acc, current) => {
-                return acc + ((current.system.weight * current.system.quantity) || 0);
+                const currentItemWeight = current.getFlag(moduleID, 'weight') || current.system.weight;
+                return acc + ((currentItemWeight * current.system.quantity) || 0);
             }, 0);
             label += ` (${currentWeight}/${section.maxWeight} lbs.)`;
         }
