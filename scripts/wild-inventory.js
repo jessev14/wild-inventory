@@ -144,7 +144,7 @@ Hooks.on('renderActorSheet', (app, [html], appData) => {
 
         const sectionID = item.getFlag(moduleID, 'customInventorySection');
         const section = inventorySections.find(s => s.id === sectionID);
-        if (!section?.weightLimit) continue;
+        if (section?.weightLimit !== true) continue;
 
         const itemWeight = item.getFlag(moduleID, 'weight') * item.system.quantity;
         let weightUnit = game.i18n.localize(`DND5E.Abbreviation${game.settings.get("dnd5e", "metricWeightUnits") ? "Kg" : "Lbs"}`);
@@ -194,12 +194,15 @@ Hooks.on('updateItem', (item, diff, options, userID) => {
     const { weightLimit } = section;
     return item.update({
         [`flags.${moduleID}.weight`]: weightLimit ? item.system.weight : null,
-        'system.weight': weightLimit ? 0 : item.flags[moduleID].weight
+        'system.weight': weightLimit ? 0 : (item.flags[moduleID].weight || item.system.weight)
     });
 });
 
 Hooks.on('renderItemSheet', (app, [html], appData) => {
     const item = app.object;
+    const sectionID = item.getFlag(moduleID, 'customInventorySection');
+    const section = item.actor.getFlag(moduleID, 'inventorySections')?.find(s => s.id === sectionID);
+    if (!section?.weightLimit) return;
     if (!('weight' in (item.flags[moduleID] || {}))) return;
 
     const weightInput = html.querySelector('input[name="system.weight"]');
